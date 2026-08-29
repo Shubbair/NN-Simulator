@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NNSimulator · Research</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="hdr">
+  <div class="logo">NN<em>Simulator</em><span class="lsub">Research</span></div>
+  <div class="hdiv"></div>
+  <div class="htab on"  onclick="setMode('design',this)">Design</div>
+  <div class="htab" onclick="setMode('analyze',this)">Analyze</div>
+  <div class="htab" onclick="setMode('diagram',this)">Diagram</div>
+  <div class="htab" onclick="setMode('compare',this)">Compare</div>
+  <div class="hs"></div>
+  <button class="btn" onclick="resetNet()">⟳ Reset</button>
+  <div class="hdiv"></div>
+  <button class="btn gc" onclick="openTrain()">▶ Train</button>
+</div>
+
+<!-- APP -->
+<div id="app">
+
+<!-- LEFT -->
+<div id="left">
+  <div class="ptabs">
+    <div class="ptab on"  onclick="setLTab('layers',this)">Layers</div>
+    <div class="ptab" onclick="setLTab('baselines',this)">Baselines</div>
+    <div class="ptab" onclick="setLTab('custom',this)">Custom</div>
+  </div>
+  <div class="pb" id="lt-layers"></div>
+  <div class="pb" style="display:none" id="lt-baselines"></div>
+  <div class="pb" style="display:none" id="lt-custom">
+    <div class="clf">
+      <h4>Custom Layer</h4>
+      <div class="f"><label>Name</label><input id="cl-n" value="MyLayer"></div>
+      <div style="display:grid;grid-template-columns:1fr 50px;gap:5px">
+        <div class="f"><label>Description</label><input id="cl-d" value="Custom operation"></div>
+        <div class="f"><label>Color</label><input type="color" id="cl-c" value="#8b5cf6"></div>
+      </div>
+      <div class="f"><label>Params (name:type,…)</label><input id="cl-p" placeholder="dim:number,p:range"></div>
+      <div class="f"><label>Forward stub</label><textarea id="cl-f">return self.op(x)</textarea></div>
+      <button class="btn ac" onclick="regCustom()" style="width:100%;justify-content:center;margin-top:2px">+ Register</button>
+    </div>
+    <div id="cl-list" style="margin-top:7px"></div>
+  </div>
+  <div class="pb" style="display:none" id="lt-saved">
+    <div id="saved-list"><div style="color:var(--t3);font-size:8px;text-align:center;padding:14px 0">No saved architectures.</div></div>
+  </div>
+</div>
+
+<!-- CANVAS -->
+<div id="cvp">
+  <div id="cvhdr">
+    <input id="arch-name" value="Untitled Architecture" spellcheck="false">
+    <span id="status-badge" class="badge iv">Empty</span>
+    <div class="canvas-tools" aria-label="Selected layer actions">
+      <button class="btn sm" onclick="if(selIdx!==null)moveLayer(selIdx,-1)" title="Move selected layer up">↑</button>
+      <button class="btn sm" onclick="if(selIdx!==null)moveLayer(selIdx,1)" title="Move selected layer down">↓</button>
+      <button class="btn sm danger" onclick="if(selIdx!==null)removeLayer(selIdx)" title="Remove selected layer">Remove</button>
+    </div>
+    <button class="btn sm" onclick="toggleSkip()" id="skip-btn">⤳ Skip</button>
+  </div>
+  <div id="cvwrap"></div>
+  <div id="sb">
+    <div class="st"><span class="sk">Layers</span><span class="sv" id="sl">0</span></div>
+    <div class="st"><span class="sk">Params</span><span class="sv" id="sp">0</span></div>
+    <div class="st"><span class="sk">Memory</span><span class="sv" id="sm">0MB</span></div>
+    <div class="st"><span class="sk">FLOPs</span><span class="sv" id="sf">0</span></div>
+    <div class="st"><span class="sk">Depth</span><span class="sv" id="sd">0</span></div>
+    <div class="st"><span class="sk">Status</span><span class="sv" id="ss">—</span></div>
+  </div>
+</div>
+
+<!-- RIGHT -->
+<div id="right">
+  <div class="rtabs">
+    <div class="rtab on"  onclick="setRTab('inspector',this)">Inspector</div>
+    <div class="rtab" onclick="setRTab('validate',this)">Validate</div>
+    <div class="rtab" onclick="setRTab('trace',this)">Tensor Flow</div>
+    <div class="rtab" onclick="setRTab('analysis',this)">Analysis</div>
+    <div class="rtab" onclick="setRTab('diagram',this)">Diagram</div>
+    <div class="rtab" onclick="setRTab('code',this)">Code</div>
+  </div>
+
+  <!-- Inspector -->
+  <div class="rp on" id="rp-inspector">
+    <div style="color:var(--t3);font-size:8px;text-align:center;padding:18px 0">Select a layer to inspect</div>
+  </div>
+
+  <!-- Validate -->
+  <div class="rp" id="rp-validate"></div>
+
+  <!-- Tensor Flow -->
+  <div class="rp" id="rp-trace">
+    <div class="as">
+      <div class="ah">Input Tensor Shape</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+        <div class="f"><label>Batch (N)</label><input type="number" id="tn" value="1" min="1"></div>
+        <div class="f"><label>Channels</label><input type="number" id="tc" value="3" min="1"></div>
+        <div class="f"><label>Height</label><input type="number" id="th" value="32" min="1"></div>
+        <div class="f"><label>Width</label><input type="number" id="tw" value="32" min="1"></div>
+      </div>
+      <button class="btn ac" onclick="runTrace()" style="width:100%;justify-content:center;margin-top:4px">⚡ Run Tensor Flow</button>
+    </div>
+    <div id="trace-out"></div>
+  </div>
+
+  <!-- Analysis -->
+  <div class="rp" id="rp-analysis"></div>
+
+  <!-- Diagram -->
+  <div class="rp" id="rp-diagram">
+    <div class="diag-controls">
+      <button class="btn" onclick="renderDiagram()" style="flex:1;justify-content:center">⟳ Refresh</button>
+      <button class="btn gc" onclick="exportSVG()">⬇ SVG</button>
+      <button class="btn" onclick="exportPNG()">⬇ PNG</button>
+    </div>
+    <div id="diag-svg"></div>
+    <div style="font-size:7px;color:var(--t3);margin-top:5px;text-align:center">Publication-ready · Export SVG for papers</div>
+  </div>
+
+  <!-- Code -->
+  <div class="rp" id="rp-code"></div>
+</div>
+</div>
+
+<!-- TRAIN MODAL -->
+<div class="ov" id="ov-train">
+  <div class="modal">
+    <h2>TensorFlow.js Experiment</h2>
+    <div class="ms">Runs real browser-side gradient updates on generated tensors and reports measured metrics.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <div class="f"><label>Optimizer</label><select id="opt"><option>Adam</option><option>AdamW</option><option>SGD</option><option>RMSprop</option></select></div>
+      <div class="f"><label>Learning Rate</label><input type="number" id="lr" value="0.001" step="0.0001"></div>
+      <div class="f"><label>Loss Function</label><select id="lf"><option>CrossEntropyLoss</option><option>MSELoss</option><option>BCELoss</option><option>NLLLoss</option></select></div>
+      <div class="f"><label>Epochs</label><input type="number" id="ep" value="30" min="1" max="500"></div>
+      <div class="f"><label>Batch Size</label><input type="number" id="bs" value="32"></div>
+      <div class="f"><label>Dataset</label><select id="ds"><option>Synthetic</option><option>MNIST (sim)</option><option>CIFAR-10 (sim)</option><option>ImageNet (sim)</option><option>IMDb (sim)</option></select></div>
+    </div>
+    <div class="tlog" id="tlog"></div>
+    <div class="pbar"><div class="pf" id="pf"></div></div>
+    <div id="tres" style="display:none;margin-top:8px"></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" onclick="closeOv('ov-train')">Close</button>
+      <button class="btn ac" id="tbtn" onclick="runTrain()">▶ Start Training</button>
+      <button class="btn gc" onclick="exportCode()">⬇ Export .py</button>
+    </div>
+  </div>
+</div>
+
+<!-- SAVE MODAL -->
+<div class="ov" id="ov-save">
+  <div class="modal" style="width:360px">
+    <h2>Save Architecture</h2>
+    <div class="ms">Save a snapshot for comparison or reuse.</div>
+    <div class="f"><label>Name</label><input id="sv-n" value="Architecture 1"></div>
+    <div class="f"><label>Research Notes</label><textarea id="sv-notes" placeholder="Hypothesis, task, design rationale…" style="min-height:60px"></textarea></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" onclick="closeOv('ov-save')">Cancel</button>
+      <button class="btn ac" onclick="doSave()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
