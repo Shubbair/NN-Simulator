@@ -463,7 +463,7 @@ function runTrace(){
   let cur=[n,c,h2,w2];
   const rows=[];
   layers.forEach((l,i)=>{
-    const prev=[...cur];let ok=true,err='';const p=l.params;
+    const prev=[...cur];let ok=true,err='',unverified=false;const p=l.params;
     try{
       switch(l.type){
         case 'Linear':case 'Linear+BN+Act':
@@ -480,13 +480,25 @@ function runTrace(){
         case 'Flatten':cur=[cur[0],cur.slice(1).reduce((a,b)=>a*b,1)];break;
         case 'BatchNorm1d':if(cur[1]!==p.num_features){err=`need ${p.num_features} got ${cur[1]}`;ok=false;}break;
         case 'BatchNorm2d':case 'InstanceNorm2d':if(cur[1]!==p.num_features){err=`need ${p.num_features}ch got ${cur[1]}`;ok=false;}break;
+        case 'GroupNorm':if(cur[1]!==p.num_channels){err=`need ${p.num_channels}ch got ${cur[1]}`;ok=false;}break;
         case 'SEBlock':case 'ResidualBlock':if(cur[1]!==p.channels){err=`need ${p.channels}ch got ${cur[1]}`;ok=false;}break;
+        case 'TransformerEncoderLayer':case 'TransformerDecoderLayer':case 'PositionalEncoding':
+          if(cur[cur.length-1]!==p.d_model){err=`need d_model=${p.d_model} got ${cur[cur.length-1]}`;ok=false;}break;
+        case 'LSTM':case 'GRU':case 'RNN':
+          if(cur[cur.length-1]!==p.input_size){err=`need input_size=${p.input_size} got ${cur[cur.length-1]}`;ok=false;}
+          else cur[cur.length-1]=p.hidden_size;break;
+        // Bilinear takes two separate tensors; MultiheadAttention takes query/key/value;
+        // Embedding takes integer indices, not a feature tensor. None of these fit the
+        // single-flowing-tensor model this tracer represents, so rather than silently
+        // showing a false ✓ with the shape unchanged, mark them as genuinely unverified.
+        case 'Bilinear':case 'MultiheadAttention':case 'Embedding':unverified=true;break;
         default:break;
       }
     }catch(e){ok=false;err=e.message;}
-    rows.push({l,i,in_:[...prev],out_:[...cur],ok,err});
+    rows.push({l,i,in_:[...prev],out_:[...cur],ok,err,unverified});
   });
   const allOk=rows.every(r=>r.ok);
+  const hasUnverified=rows.some(r=>r.unverified);
   const el=document.getElementById('trace-out');
   let h=`<div class="slabel" style="margin-bottom:4px">Input [${n},${c},${h2},${w2}] → Output [${cur.join(',')}]</div>
     <div class="tt">
@@ -497,12 +509,13 @@ function runTrace(){
       <span class="trn">${r.i+1}. ${r.l.type}</span>
       <span class="tri">[${r.in_.join(',')}]</span>
       <span class="tro">[${r.out_.join(',')}]</span>
-      <span class="${r.ok?'tok':'ter'}">${r.ok?'✓':('✗')}</span>
+      <span class="${r.unverified?'tun':r.ok?'tok':'ter'}">${r.unverified?'–':r.ok?'✓':'✗'}</span>
     </div>`;
     if(!r.ok) h+=`<div class="tr" style="background:rgba(239,68,68,.04);grid-template-columns:1fr"><span class="ter" style="padding-left:4px">↳ ${r.err}</span></div>`;
+    if(r.unverified) h+=`<div class="tr" style="grid-template-columns:1fr"><span class="tun" style="padding-left:4px">↳ multi-input or index-based layer — not shape-checked by this tracer</span></div>`;
   });
   h+='</div>';
-  h+=`<div class="vi ${allOk?'ok':'er'}" style="margin-top:5px"><span>${allOk?'✓':'✗'}</span><span>${allOk?`Tensor flows correctly through all ${layers.length} layers.`:'Shape mismatch detected — check highlighted layers.'}</span></div>`;
+  h+=`<div class="vi ${allOk?(hasUnverified?'wn':'ok'):'er'}" style="margin-top:5px"><span>${allOk?(hasUnverified?'–':'✓'):'✗'}</span><span>${allOk?(hasUnverified?`Tensor flows correctly through the checked layers — some layers above were not shape-verified (see notes).`:`Tensor flows correctly through all ${layers.length} layers.`):'Shape mismatch detected — check highlighted layers.'}</span></div>`;
 
   // Live flow visualization
   h+=`<div class="as" style="margin-top:10px"><div class="ah">Live Tensor Flow</div>
@@ -954,8 +967,9 @@ function openTrain(){
 function buildTfjsModel(){
   if(!window.tf)return{error:'TensorFlow.js is not loaded. Check your network connection and reload.'};
   if(!layers.length)return{error:'Add at least one layer before training.'};
-  const unsupported=layers.find(l=>['Bilinear','Conv1d','Conv3d','ConvTranspose2d','DepthwiseSepConv','MultiheadAttention','TransformerEncoderLayer','TransformerDecoderLayer','LSTM','GRU','RNN','GroupNorm','InstanceNorm2d','RMSNorm','SEBlock','PositionalEncoding','ResidualBlock','Unflatten','Permute'].includes(l.type));
-  if(unsupported)return{error:`${unsupported.type} cannot be mapped faithfully to TensorFlow.js yet. Use Conv2d, Dense, activations, pooling, normalization, Flatten, and Dropout layers for a real run.`};
+  const UNSUPPORTED_TYPES=['Bilinear','Conv1d','Conv3d','ConvTranspose2d','DepthwiseSepConv','MultiheadAttention','TransformerEncoderLayer','TransformerDecoderLayer','LSTM','GRU','RNN','GroupNorm','InstanceNorm2d','RMSNorm','SEBlock','PositionalEncoding','ResidualBlock','Unflatten','Permute'];
+  const unsupportedTypes=[...new Set(layers.filter(l=>UNSUPPORTED_TYPES.includes(l.type)).map(l=>l.type))];
+  if(unsupportedTypes.length)return{error:`${unsupportedTypes.join(', ')} cannot be mapped faithfully to TensorFlow.js yet (${unsupportedTypes.length} layer type${unsupportedTypes.length>1?'s':''} affected). Use Conv2d, Dense, activations, pooling, normalization, Flatten, and Dropout layers for a real run.`};
   const first=layers[0];
   const imageInput=['Conv2d','BatchNorm2d','MaxPool2d','AvgPool2d','AdaptiveAvgPool2d'].includes(first.type);
   const inputShape=imageInput?[32,32,first.params.in_channels||3]:[first.params.in_features||128];
@@ -990,7 +1004,7 @@ function buildTfjsModel(){
 async function runTrain(){
   const button=document.getElementById('tbtn'),log=document.getElementById('tlog'),pf=document.getElementById('pf'),result=document.getElementById('tres');
   button.disabled=true;log.textContent='';pf.style.width='0%';result.style.display='none';
-  let model,x,y;
+  let model,x,y,opt;
   const write=(tag,message,color='#62665f')=>{log.innerHTML+=`<span style="color:${color}">${tag}</span> <span style="color:#292d2a">${message}</span>\n`;log.scrollTop=log.scrollHeight;};
   try{
     if(!window.tf)throw new Error('TensorFlow.js is not loaded. Check your network connection and reload.');
@@ -1000,10 +1014,15 @@ async function runTrain(){
     const built=buildTfjsModel();if(built.error)throw new Error(built.error);model=built.model;
     const sampleCount=Math.max(64,Math.min(2048,batchSize*8));
     x=tf.randomNormal([sampleCount,...built.inputShape]);
-    const signal=x.mean(built.inputShape.length===3?[1,2,3]:[1]);
-    y=tf.oneHot(signal.greater(0).toInt(),2);
+    // tf.tidy disposes every intermediate tensor (signal, .greater(), .toInt()) as soon as
+    // this callback returns, keeping only the final `y` alive — without it these leak on every run.
+    y=tf.tidy(()=>{
+      const signal=x.mean(built.inputShape.length===3?[1,2,3]:[1]);
+      return tf.oneHot(signal.greater(0).toInt(),2);
+    });
     const optimizer=document.getElementById('opt').value;
-    const opt=optimizer==='SGD'?tf.train.sgd(lr):optimizer==='RMSprop'?tf.train.rmsprop(lr):tf.train.adam(lr);
+    if(optimizer==='AdamW')write('[NOTE]','TensorFlow.js has no native decoupled-weight-decay optimizer — using Adam instead.','#a5730a');
+    opt=optimizer==='SGD'?tf.train.sgd(lr):optimizer==='RMSprop'?tf.train.rmsprop(lr):tf.train.adam(lr);
     model.compile({optimizer:opt,loss:'categoricalCrossentropy',metrics:['accuracy']});
     write('[TFJS]',`TensorFlow.js ${tf.version.tfjs} · WebGL backend: ${tf.getBackend()}`,'#46777b');
     write('[MODEL]',`${model.countParams().toLocaleString()} trainable parameters · input [${built.inputShape.join(',')}]`,'#46777b');
@@ -1019,37 +1038,8 @@ async function runTrain(){
     result.innerHTML=`<div class="rc"><div class="rk">Val Acc</div><div class="rv" style="color:var(--gr)">${(valAcc*100).toFixed(2)}%</div></div><div class="rc"><div class="rk">Val Loss</div><div class="rv" style="color:var(--cy)">${valLoss.toFixed(4)}</div></div><div class="rc"><div class="rk">Backend</div><div class="rv">${tf.getBackend()}</div></div>`;
     write('[DONE]','Experiment complete. Metrics above came from TensorFlow.js training.','#4f8e78');pf.style.width='100%';
   }catch(error){write('[ERROR]',error.message,'#a44743');write('[ABORT]','No simulated metrics were generated.','#a44743');}
-  finally{if(x)x.dispose();if(y)y.dispose();if(model)model.dispose();button.disabled=false;}
+  finally{if(x)x.dispose();if(y)y.dispose();if(model)model.dispose();if(opt)opt.dispose();button.disabled=false;}
 }
-function runMsgs(msgs,showRes){
-  const log=document.getElementById('tlog'),pf=document.getElementById('pf');
-  let i=0;
-  const step=()=>{
-    if(i>=msgs.length){
-      if(showRes){
-        const last=msgs.filter(m=>m.t==='[EPOCH]').pop();
-        if(last){
-          const acc=last.m.match(/val_acc=([\d.]+)/)?.[1]||'—';
-          const vl=last.m.match(/val_loss=([\d.]+)/)?.[1]||'—';
-          const res=document.getElementById('tres');
-          res.style.display='grid';res.style.gridTemplateColumns='1fr 1fr 1fr';res.style.gap='5px';
-          res.innerHTML=`<div class="rc"><div class="rk">Val Acc</div><div class="rv" style="color:var(--gr)">${acc}%</div></div>
-            <div class="rc"><div class="rk">Val Loss</div><div class="rv" style="color:var(--cy)">${vl}</div></div>
-            <div class="rc"><div class="rk">Params</div><div class="rv">${(countParams()/1e3).toFixed(1)}K</div></div>`;
-        }
-      }
-      return;
-    }
-    const{t,m}=msgs[i];
-    const col=t==='[ERROR]'||t==='[ABORT]'?'#ef4444':t==='[WARN]'?'#f59e0b':t==='[EPOCH]'?'#3b82f6':t==='[DONE]'?'#10b981':'#6b748f';
-    log.innerHTML+=`<span style="color:${col}">${t} </span><span style="color:#c8cde8">${m}</span>\n`;
-    log.scrollTop=log.scrollHeight;
-    pf.style.width=((i+1)/msgs.length*100).toFixed(0)+'%';
-    i++;setTimeout(step,t==='[EPOCH]'?55:25);
-  };
-  step();
-}
-
 function closeOv(id){document.getElementById(id).classList.remove('open');}
 function resetNet(){
   layers=[];skips=[];selIdx=null;nextId=1;
