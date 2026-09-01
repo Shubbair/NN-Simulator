@@ -857,7 +857,7 @@ function highlightCode(code){
   });
 }
 
-function genCode(framework = activeCodeFramework){
+function genCode(framework = activeCodeFramework, includeTraining = false){
   const name=(document.getElementById('arch-name').value||'MyModel').replace(/[^a-zA-Z0-9]/g,'_');
   const total=countParams();
   const training = getTrainingConfig();
@@ -865,46 +865,54 @@ function genCode(framework = activeCodeFramework){
   if(framework === 'tensorflow'){
     const optimizerName = training.optimizer === 'AdamW' ? 'Adam' : training.optimizer === 'SGD' ? 'SGD' : training.optimizer === 'RMSprop' ? 'RMSprop' : 'Adam';
     const lossName = training.loss === 'CrossEntropyLoss' ? 'CategoricalCrossentropy' : training.loss === 'MSELoss' ? 'MSE' : 'BinaryCrossentropy';
-    return `# TensorFlow model + training config exported by NN Simulator
-import tensorflow as tf
-
-TRAINING_CONFIG = {
-    "optimizer": "${training.optimizer}",
-    "learning_rate": ${training.learningRate},
-    "loss": "${training.loss}",
-    "epochs": ${training.epochs},
-    "batch_size": ${training.batchSize},
-    "dataset": "${training.dataset}",
-}
-
-class ${name}(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.model = tf.keras.Sequential([
-${layers.map((l, i) => `            ${buildTensorFlowLayerCode(l, i)}`).join(',\n')}
-        ])
-
-    def call(self, x):
-        return self.model(x)
-
-model = ${name}()
-optimizer = tf.keras.optimizers.${optimizerName}(learning_rate=${training.learningRate})
-loss_fn = tf.keras.losses.${lossName}(from_logits=False)
-
-# Synthetic train split for demo purposes
-x = tf.random.normal([${training.batchSize}, 32, 32, 3], dtype=tf.float32)
-y = tf.one_hot(tf.cast(tf.random.uniform([${training.batchSize}], maxval=2, dtype=tf.int32), tf.int32), 2)
-
-for epoch in range(${training.epochs}):
-    with tf.GradientTape() as tape:
-        logits = model(x, training=True)
-        loss = loss_fn(y, logits)
-    grads = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(grads, model.trainable_variables))
-    print(f"Epoch {epoch + 1}/{${training.epochs}} - loss: {loss.numpy():.4f}")
-
-print(f"${name}: {model.count_params():,} trainable parameters")
-`;
+    const lines=[];
+    lines.push('# TensorFlow model exported by NN Simulator');
+    lines.push(`# Model: ${name}`);
+    lines.push(`# Parameters: ~${total>1e6?(total/1e6).toFixed(2)+'M':(total/1e3).toFixed(1)+'K'}`);
+    lines.push('#');
+    lines.push('import tensorflow as tf');
+    if(includeTraining){
+      lines.push('');
+      lines.push('TRAINING_CONFIG = {');
+      lines.push(`    "optimizer": "${training.optimizer}",`);
+      lines.push(`    "learning_rate": ${training.learningRate},`);
+      lines.push(`    "loss": "${training.loss}",`);
+      lines.push(`    "epochs": ${training.epochs},`);
+      lines.push(`    "batch_size": ${training.batchSize},`);
+      lines.push(`    "dataset": "${training.dataset}",`);
+      lines.push('}');
+    }
+    lines.push('');
+    lines.push(`class ${name}(tf.keras.Model):`);
+    lines.push('    def __init__(self):');
+    lines.push('        super().__init__()');
+    lines.push('        self.model = tf.keras.Sequential([');
+    lines.push(...layers.map((l, i) => `            ${buildTensorFlowLayerCode(l, i)}` + (i < layers.length - 1 ? ',' : '')));
+    lines.push('        ])');
+    lines.push('');
+    lines.push('    def call(self, x):');
+    lines.push('        return self.model(x)');
+    lines.push('');
+    lines.push(`model = ${name}()`);
+    if(includeTraining){
+      lines.push(`optimizer = tf.keras.optimizers.${optimizerName}(learning_rate=${training.learningRate})`);
+      lines.push(`loss_fn = tf.keras.losses.${lossName}(from_logits=False)`);
+      lines.push('');
+      lines.push('# Synthetic train split for demo purposes');
+      lines.push(`x = tf.random.normal([${training.batchSize}, 32, 32, 3], dtype=tf.float32)`);
+      lines.push(`y = tf.one_hot(tf.cast(tf.random.uniform([${training.batchSize}], maxval=2, dtype=tf.int32), tf.int32), 2)`);
+      lines.push('');
+      lines.push(`for epoch in range(${training.epochs}):`);
+      lines.push('    with tf.GradientTape() as tape:');
+      lines.push('        logits = model(x, training=True)');
+      lines.push('        loss = loss_fn(y, logits)');
+      lines.push('    grads = tape.gradient(loss, model.trainable_variables)');
+      lines.push('    optimizer.apply_gradients(zip(grads, model.trainable_variables))');
+      lines.push('    print(f"Epoch {epoch + 1}/${training.epochs} - loss: {loss.numpy():.4f}")');
+    }
+    lines.push('');
+    lines.push(`print(f"${name}: {model.count_params():,} trainable parameters")`);
+    return lines.join('\n');
   }
 
   const hasSkips=skips.length>0;
@@ -918,15 +926,17 @@ print(f"${name}: {model.count_params():,} trainable parameters")
   lines.push('import torch');
   lines.push('import torch.nn as nn');
   lines.push('import torch.nn.functional as F');
-  lines.push('');
-  lines.push('TRAINING_CONFIG = {');
-  lines.push(`    "optimizer": "${training.optimizer}",`);
-  lines.push(`    "learning_rate": ${training.learningRate},`);
-  lines.push(`    "loss": "${training.loss}",`);
-  lines.push(`    "epochs": ${training.epochs},`);
-  lines.push(`    "batch_size": ${training.batchSize},`);
-  lines.push(`    "dataset": "${training.dataset}",`);
-  lines.push('}');
+  if(includeTraining){
+    lines.push('');
+    lines.push('TRAINING_CONFIG = {');
+    lines.push(`    "optimizer": "${training.optimizer}",`);
+    lines.push(`    "learning_rate": ${training.learningRate},`);
+    lines.push(`    "loss": "${training.loss}",`);
+    lines.push(`    "epochs": ${training.epochs},`);
+    lines.push(`    "batch_size": ${training.batchSize},`);
+    lines.push(`    "dataset": "${training.dataset}",`);
+    lines.push('}');
+  }
   lines.push('');
   lines.push(`class ${name}(nn.Module):`);
   lines.push('    def __init__(self):');
@@ -951,20 +961,22 @@ print(f"${name}: {model.count_params():,} trainable parameters")
   }
   lines.push('');
   lines.push('model = ' + name + '()');
-  lines.push('optimizer = torch.optim.' + training.optimizer + '(model.parameters(), lr=' + training.learningRate + ')');
-  lines.push('criterion = nn.CrossEntropyLoss()');
-  lines.push('');
-  lines.push('x = torch.randn(' + training.batchSize + ', 3, 32, 32)');
-  lines.push('y = torch.randint(0, 2, (' + training.batchSize + ',))');
-  lines.push('');
-  lines.push('for epoch in range(' + training.epochs + '):');
-  lines.push('    model.train()');
-  lines.push('    optimizer.zero_grad()');
-  lines.push('    logits = model(x)');
-  lines.push('    loss = criterion(logits, y)');
-  lines.push('    loss.backward()');
-  lines.push('    optimizer.step()');
-  lines.push('    print(f"Epoch {epoch + 1}/' + training.epochs + ' - loss: {loss.item():.4f}")');
+  if(includeTraining){
+    lines.push('optimizer = torch.optim.' + training.optimizer + '(model.parameters(), lr=' + training.learningRate + ')');
+    lines.push('criterion = nn.CrossEntropyLoss()');
+    lines.push('');
+    lines.push('x = torch.randn(' + training.batchSize + ', 3, 32, 32)');
+    lines.push('y = torch.randint(0, 2, (' + training.batchSize + ',))');
+    lines.push('');
+    lines.push('for epoch in range(' + training.epochs + '):');
+    lines.push('    model.train()');
+    lines.push('    optimizer.zero_grad()');
+    lines.push('    logits = model(x)');
+    lines.push('    loss = criterion(logits, y)');
+    lines.push('    loss.backward()');
+    lines.push('    optimizer.step()');
+    lines.push('    print(f"Epoch {epoch + 1}/' + training.epochs + ' - loss: {loss.item():.4f}")');
+  }
   lines.push('');
   lines.push('n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)');
   lines.push(`print(f"${name}: {n_params:,} trainable parameters")`);
@@ -1029,7 +1041,7 @@ function buildLayerCodeRaw(l){
 function renderCode(){
   const el=document.getElementById('rp-code');
   if(!layers.length){el.innerHTML='<div style="color:var(--t3);font-size:8px">Add layers to generate code.</div>';return;}
-  const codeText=genCode(activeCodeFramework);
+  const codeText=genCode(activeCodeFramework, false);
   const codeHtml=highlightCode(codeText);
   el.innerHTML=`
     <div style="display:flex;gap:6px;margin-bottom:8px">
@@ -1039,20 +1051,20 @@ function renderCode(){
     <pre class="cb2">${codeHtml}</pre>
     <div style="display:flex;gap:5px;margin-top:6px">
       <button class="btn" style="flex:1;justify-content:center" onclick="copyCode()">⎘ Copy</button>
-      <button class="btn gc" style="flex:1;justify-content:center" onclick="exportCode(activeCodeFramework)">⬇ Download ${activeCodeFramework === 'pytorch' ? 'PyTorch' : 'TensorFlow'} .py</button>
+      <button class="btn gc" style="flex:1;justify-content:center" onclick="exportCode(activeCodeFramework, false)">⬇ Download ${activeCodeFramework === 'pytorch' ? 'PyTorch' : 'TensorFlow'} architecture .py</button>
     </div>`;
 }
 function copyCode(){
   navigator.clipboard.writeText(document.querySelector('.cb2')?.textContent||'');
 }
-function exportCode(framework = activeCodeFramework){
+function exportCode(framework = activeCodeFramework, includeTraining = false){
   const name=document.getElementById('arch-name').value||'model';
-  const code=genCode(framework);
+  const code=genCode(framework, includeTraining);
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));
-  a.download=`${name.replace(/\s+/g,'_')}_${framework}.py`;
+  const suffix = includeTraining ? 'training' : 'architecture';
+  a.download=`${name.replace(/\s+/g,'_')}_${framework}_${suffix}.py`;
   a.click();
-  closeOv('ov-train');
 }
 
 // ══════════════════════════════════════════════════
