@@ -88,65 +88,10 @@ const PM={
   activation:{l:'Activation',tp:'tx'},
 };
 
-const BASELINES=[
-  {name:'ResNet Residual Block',tag:'CNN',c:'#10b981',
-   layers:[
-     {t:'Conv2d',p:{in_channels:64,out_channels:64,kernel_size:3,stride:1,padding:1}},
-     {t:'BatchNorm2d',p:{num_features:64}},{t:'ReLU',p:{}},
-     {t:'Conv2d',p:{in_channels:64,out_channels:64,kernel_size:3,stride:1,padding:1}},
-     {t:'BatchNorm2d',p:{num_features:64}},
-   ],sk:[{f:0,t:4}],desc:'He et al. 2016 — basic residual block with identity skip'},
-  {name:'Bottleneck Block (ResNet-50)',tag:'CNN',c:'#f97316',
-   layers:[
-     {t:'Conv2d',p:{in_channels:256,out_channels:64,kernel_size:1,stride:1,padding:0}},
-     {t:'BatchNorm2d',p:{num_features:64}},{t:'ReLU',p:{}},
-     {t:'Conv2d',p:{in_channels:64,out_channels:64,kernel_size:3,stride:1,padding:1}},
-     {t:'BatchNorm2d',p:{num_features:64}},{t:'ReLU',p:{}},
-     {t:'Conv2d',p:{in_channels:64,out_channels:256,kernel_size:1,stride:1,padding:0}},
-     {t:'BatchNorm2d',p:{num_features:256}},
-   ],sk:[{f:0,t:7}],desc:'1×1→3×3→1×1 bottleneck with projection skip'},
-  {name:'Pre-Norm Transformer (GPT-style)',tag:'NLP',c:'#8b5cf6',
-   layers:[
-     {t:'LayerNorm',p:{normalized_shape:128}},
-     {t:'MultiheadAttention',p:{embed_dim:128,num_heads:8,dropout:0.1}},
-     {t:'Dropout',p:{p:0.1}},
-     {t:'LayerNorm',p:{normalized_shape:128}},
-     {t:'Linear',p:{in_features:128,out_features:512,bias:true}},
-     {t:'GELU',p:{}},
-     {t:'Dropout',p:{p:0.1}},
-     {t:'Linear',p:{in_features:512,out_features:128,bias:true}},
-     {t:'Dropout',p:{p:0.1}},
-   ],sk:[{f:0,t:3},{f:3,t:8}],desc:'Pre-LayerNorm GPT/ViT block with two residual paths'},
-  {name:'MobileNetV2 Inverted Residual',tag:'Efficient',c:'#06b6d4',
-   layers:[
-     {t:'Conv2d',p:{in_channels:32,out_channels:192,kernel_size:1,stride:1,padding:0}},
-     {t:'BatchNorm2d',p:{num_features:192}},{t:'ReLU',p:{}},
-     {t:'DepthwiseSepConv',p:{in_channels:192,out_channels:192,kernel_size:3,padding:1}},
-     {t:'BatchNorm2d',p:{num_features:192}},{t:'ReLU',p:{}},
-     {t:'Conv2d',p:{in_channels:192,out_channels:32,kernel_size:1,stride:1,padding:0}},
-     {t:'BatchNorm2d',p:{num_features:32}},
-   ],sk:[{f:0,t:7}],desc:'Expansion→DW→Projection with linear bottleneck (stride=1)'},
-  {name:'U-Net Skip Encoder Stage',tag:'Seg',c:'#f59e0b',
-   layers:[
-     {t:'Conv2d',p:{in_channels:1,out_channels:64,kernel_size:3,stride:1,padding:1}},
-     {t:'ReLU',p:{}},
-     {t:'Conv2d',p:{in_channels:64,out_channels:64,kernel_size:3,stride:1,padding:1}},
-     {t:'ReLU',p:{}},
-     {t:'MaxPool2d',p:{kernel_size:2,stride:2}},
-     {t:'Conv2d',p:{in_channels:64,out_channels:128,kernel_size:3,stride:1,padding:1}},
-     {t:'ReLU',p:{}},
-   ],sk:[{f:2,t:6}],desc:'U-Net encoder with skip connection saved to decoder'},
-  {name:'LSTM Text Classifier',tag:'NLP',c:'#ec4899',
-   layers:[
-     {t:'Embedding',p:{num_embeddings:10000,embedding_dim:128}},
-     {t:'LSTM',p:{input_size:128,hidden_size:256,num_layers:2,batch_first:true,dropout:0.3}},
-     {t:'Dropout',p:{p:0.5}},
-     {t:'Linear',p:{in_features:256,out_features:64,bias:true}},
-     {t:'ReLU',p:{}},
-     {t:'Linear',p:{in_features:64,out_features:2,bias:true}},
-     {t:'Softmax',p:{dim:1}},
-   ],sk:[],desc:'Stacked LSTM with embedding for sentiment/classification'},
-];
+const BASELINES = (typeof window !== 'undefined' && Array.isArray(window.MODEL_BASELINES))
+  ? window.MODEL_BASELINES
+  : [];
+
 
 // ══════════════════════════════════════════════════
 // STATE
