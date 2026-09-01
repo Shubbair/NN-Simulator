@@ -1114,8 +1114,16 @@ function buildTfjsModel(){
       default:break;
     }
   });
-  const outputShape=model.outputs[0].shape;
-  if(outputShape[outputShape.length-1]!==2)model.add(tf.layers.dense({units:2,activation:'softmax'}));
+
+  const outputShape=model.outputShape || model.outputs[0].shape;
+  if(outputShape && outputShape.length > 2){
+    model.add(tf.layers.flatten());
+  }
+
+  const finalShape=model.outputShape || model.outputs[0].shape;
+  if(finalShape && finalShape.length > 1 && finalShape[finalShape.length-1] !== 2){
+    model.add(tf.layers.dense({units:2,activation:'softmax'}));
+  }
   return{model,inputShape};
 }
 async function runTrain(){
