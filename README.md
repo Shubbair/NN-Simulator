@@ -1,6 +1,6 @@
 # AI Modeling Simulator (NN Simulator)
 
-Demo video: [demo.mp4](demo.mp4)
+Demo video: [demo.mp4](demo.gif)
 
 NN Simulator is a lightweight design and brainstorming tool for students and researchers who want to explore neural network ideas, test architectural logic, and quickly understand whether a model structure is conceptually valid before moving to deeper implementation.
 
