@@ -1,11 +1,3 @@
-/* ══════════════════════════════════════════════════════════════
-   NNSIMULATOR — DESIGN TOKENS
-   Cream instrument panel with restrained, professional depth:
-   a small spacing scale and elevation scale keep every value
-   traceable to one source instead of scattered magic numbers.
-   Color is reserved for layer types and semantic status only —
-   ink black is the one interactive accent.
-   ══════════════════════════════════════════════════════════════ */
 *{box-sizing:border-box;margin:0;padding:0}
 
 :root{
