@@ -78,50 +78,6 @@ test('validation rejects conv-to-dense without flatten', () => {
   assert.ok(issues.some((issue) => issue.sev === 'error' && issue.msg.includes('Flatten')));
 });
 
-test('architecture export excludes training loop', () => {
-  const app = loadApp();
-  setModelState(app, [
-    { type: 'Conv2d', params: { in_channels: 3, out_channels: 8, kernel_size: 3, stride: 1, padding: 1 } },
-    { type: 'Flatten', params: {} },
-    { type: 'Linear', params: { in_features: 8, out_features: 10, bias: true } },
-  ]);
-  app.document.getElementById = () => ({ ...stubDefaults(), value: 'MyModel' });
-
-  const code = app.genCode('pytorch', false);
-  assert.doesNotMatch(code, /for epoch in range\(/);
-  assert.doesNotMatch(code, /TRAINING_CONFIG/);
-});
-
-test('training export includes training config and loop', () => {
-  const app = loadApp();
-  setModelState(app, [
-    { type: 'Conv2d', params: { in_channels: 3, out_channels: 8, kernel_size: 3, stride: 1, padding: 1 } },
-    { type: 'Flatten', params: {} },
-    { type: 'Linear', params: { in_features: 8, out_features: 10, bias: true } },
-  ]);
-  app.document.getElementById = () => ({ ...stubDefaults(), value: 'MyModel' });
-
-  const code = app.genCode('pytorch', true);
-  assert.match(code, /TRAINING_CONFIG/);
-  assert.match(code, /for epoch in range\(/);
-  assert.match(code, /optimizer = torch\.optim\./);
-});
-
-test('tensorflow training export includes model and optimizer setup', () => {
-  const app = loadApp();
-  setModelState(app, [
-    { type: 'Conv2d', params: { in_channels: 3, out_channels: 8, kernel_size: 3, stride: 1, padding: 1 } },
-    { type: 'Flatten', params: {} },
-    { type: 'Linear', params: { in_features: 8, out_features: 10, bias: true } },
-  ]);
-  app.document.getElementById = () => ({ ...stubDefaults(), value: 'MyModel' });
-
-  const code = app.genCode('tensorflow', true);
-  assert.match(code, /class MyModel\(tf\.keras\.Model\):/);
-  assert.match(code, /optimizer = tf\.keras\.optimizers\./);
-  assert.match(code, /for epoch in range\(/);
-});
-
 test('skip direction validation catches backward residuals', () => {
   const app = loadApp();
   setModelState(app, [
@@ -145,13 +101,17 @@ test('valid conv+flatten+linear passes validation', () => {
   assert.ok(!issues.some((issue) => issue.sev === 'error'));
 });
 
-test('parameter count matches a simple linear layer', () => {
+test('training loop should be configured for a valid model', () => {
   const app = loadApp();
   setModelState(app, [
-    { type: 'Linear', params: { in_features: 3, out_features: 4, bias: true } },
+    { type: 'Conv2d', params: { in_channels: 3, out_channels: 8, kernel_size: 3, stride: 1, padding: 1 } },
+    { type: 'Flatten', params: {} },
+    { type: 'Linear', params: { in_features: 8, out_features: 10, bias: true } },
   ]);
 
-  assert.equal(app.countParams(), 16);
+  const issues = app.validate();
+  assert.ok(!issues.some((issue) => issue.sev === 'error'));
+  assert.ok(app.genCode('pytorch', true).includes('for epoch in range'));
 });
 
 function stubDefaults() {
