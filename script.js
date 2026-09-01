@@ -824,6 +824,26 @@ function exportPNG(){
 // ══════════════════════════════════════════════════
 // CODE GENERATION
 // ══════════════════════════════════════════════════
+function escapeHtml(value){
+  return value
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function highlightCode(code){
+  let html = escapeHtml(code);
+  html = html.replace(/(#[^\n]*)/g, '<span class="cm">$1</span>');
+  html = html.replace(/("[^"]*"|'[^']*'|`[^`]*`)/g, '<span class="st2">$1</span>');
+  html = html.replace(/\b(import|from|class|def|return|if|elif|else|for|while|with|as|in|and|or|not|True|False|None|pass|break|continue|super|print|try|except|lambda|yield|del)\b/g, '<span class="kw">$1</span>');
+  html = html.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="nu">$1</span>');
+  html = html.replace(/\b([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()/g, '<span class="fn">$1</span>');
+  html = html.replace(/\b([A-Za-z_][A-Za-z0-9_]*)(?=\s*\.)/g, '<span class="fn">$1</span>');
+  return html;
+}
+
 function genCode(framework = activeCodeFramework){
   const name=(document.getElementById('arch-name').value||'MyModel').replace(/[^a-zA-Z0-9]/g,'_');
   const total=countParams();
@@ -846,49 +866,44 @@ print(f"${name}: {model.count_params():,} trainable parameters")
 `;
   }
 
-  const kw=s=>`<span class="kw">${s}</span>`;
-  const fn=s=>`<span class="fn">${s}</span>`;
-  const nu=s=>`<span class="nu">${s}</span>`;
-  const cm=s=>`<span class="cm">${s}</span>`;
-  const s2=s=>`<span class="st2">${s}</span>`;
   const hasSkips=skips.length>0;
   const lines=[];
-  lines.push(cm('# ══════════════════════════════════════'));
-  lines.push(cm(`# ${name}`));
-  lines.push(cm(`# Parameters: ~${total>1e6?(total/1e6).toFixed(2)+'M':(total/1e3).toFixed(1)+'K'}`));
-  lines.push(cm(`# Memory (FP32): ~${(total*4/1024/1024).toFixed(2)} MB`));
-  if(skips.length)lines.push(cm(`# Residual: ${skips.map(s=>`L${s.f+1}→L${s.t+1}`).join(', ')}`));
-  lines.push(cm('# ══════════════════════════════════════'));
-  lines.push(kw('import')+' torch');
-  lines.push(kw('import')+' torch.nn '+kw('as')+' nn');
-  lines.push(kw('import')+' torch.nn.functional '+kw('as')+' F');
+  lines.push('# ══════════════════════════════════════');
+  lines.push(`# ${name}`);
+  lines.push(`# Parameters: ~${total>1e6?(total/1e6).toFixed(2)+'M':(total/1e3).toFixed(1)+'K'}`);
+  lines.push(`# Memory (FP32): ~${(total*4/1024/1024).toFixed(2)} MB`);
+  if(skips.length)lines.push(`# Residual: ${skips.map(s=>`L${s.f+1}→L${s.t+1}`).join(', ')}`);
+  lines.push('# ══════════════════════════════════════');
+  lines.push('import torch');
+  lines.push('import torch.nn as nn');
+  lines.push('import torch.nn.functional as F');
   lines.push('');
-  lines.push(kw('class ')+fn(name)+'(nn.Module):');
-  lines.push(`    ${kw('def ')}${fn('__init__')}(${kw('self')}):`);
-  lines.push(`        ${fn('super')}().${fn('__init__')}()`);
+  lines.push(`class ${name}(nn.Module):`);
+  lines.push('    def __init__(self):');
+  lines.push('        super().__init__()');
   if(!hasSkips){
     lines.push('        self.net = nn.Sequential(');
-    layers.forEach((l,i)=>lines.push(`            ${buildLayerCode(l,nu,s2)}`+(i<layers.length-1?',':'')));
+    layers.forEach((l,i)=>lines.push(`            ${buildLayerCodeRaw(l)}`+(i<layers.length-1?',':'')));
     lines.push('        )');
     lines.push('');
-    lines.push(`    ${kw('def ')}${fn('forward')}(${kw('self')}, x):`);
-    lines.push(`        ${kw('return')} self.net(x)`);
+    lines.push('    def forward(self, x):');
+    lines.push('        return self.net(x)');
   }else{
-    layers.forEach((l,i)=>lines.push(`        self.l${i+1} = ${buildLayerCode(l,nu,s2)}`));
+    layers.forEach((l,i)=>lines.push(`        self.l${i+1} = ${buildLayerCodeRaw(l)}`));
     lines.push('');
-    lines.push(`    ${kw('def ')}${fn('forward')}(${kw('self')}, x):`);
+    lines.push('    def forward(self, x):');
     layers.forEach((l,i)=>{
-      skips.filter(s=>s.t===i).forEach(s=>lines.push(`        x = x + out${s.f+1}  ${cm('# residual from L'+(s.f+1))}`));
+      skips.filter(s=>s.t===i).forEach(s=>lines.push(`        x = x + out${s.f+1}  # residual from L${s.f+1}`));
       if(skips.some(s=>s.f===i)){lines.push(`        out${i+1} = x`);lines.push(`        x = self.l${i+1}(x)`);}
       else lines.push(`        x = self.l${i+1}(x)`);
     });
-    lines.push(`        ${kw('return')} x`);
+    lines.push('        return x');
   }
   lines.push('');
-  lines.push(cm('# ── Instantiate & verify ──────────────'));
-  lines.push(`model = ${fn(name)}()`);
-  lines.push(`n_params = ${fn('sum')}(p.${fn('numel')}() ${kw('for')} p ${kw('in')} model.${fn('parameters')}() ${kw('if')} p.requires_grad)`);
-  lines.push(`${fn('print')}(${s2(`f"${name}: {n_params:,} trainable parameters"`)})`);
+  lines.push('# ── Instantiate & verify ──────────────');
+  lines.push(`model = ${name}()`);
+  lines.push(`n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)`);
+  lines.push(`print(f"${name}: {n_params:,} trainable parameters")`);
   return lines.join('\n');
 }
 
@@ -910,40 +925,39 @@ function buildTensorFlowLayerCode(l, idx){
   }
 }
 
-function buildLayerCode(l,nu,s2){
+function buildLayerCodeRaw(l){
   const p=l.params;
-  const T=s=>s;
   switch(l.type){
-    case 'Linear':return`nn.Linear(${nu(p.in_features)}, ${nu(p.out_features)}, bias=${p.bias?s2('True'):s2('False')})`;
-    case 'Bilinear':return`nn.Bilinear(${nu(p.in1_features)}, ${nu(p.in2_features)}, ${nu(p.out_features)})`;
-    case 'Conv1d':return`nn.Conv1d(${nu(p.in_channels)}, ${nu(p.out_channels)}, ${nu(p.kernel_size)}, stride=${nu(p.stride)}, padding=${nu(p.padding)})`;
-    case 'Conv2d':return`nn.Conv2d(${nu(p.in_channels)}, ${nu(p.out_channels)}, ${nu(p.kernel_size)}, stride=${nu(p.stride)}, padding=${nu(p.padding)})`;
-    case 'Conv3d':return`nn.Conv3d(${nu(p.in_channels)}, ${nu(p.out_channels)}, ${nu(p.kernel_size)}, stride=${nu(p.stride)}, padding=${nu(p.padding)})`;
-    case 'ConvTranspose2d':return`nn.ConvTranspose2d(${nu(p.in_channels)}, ${nu(p.out_channels)}, ${nu(p.kernel_size)}, stride=${nu(p.stride)})`;
-    case 'DepthwiseSepConv':return`nn.Sequential(nn.Conv2d(${nu(p.in_channels)}, ${nu(p.in_channels)}, ${nu(p.kernel_size)}, padding=${nu(p.padding)}, groups=${nu(p.in_channels)}), nn.Conv2d(${nu(p.in_channels)}, ${nu(p.out_channels||p.in_channels)}, ${nu(1)}))`;
-    case 'ReLU':return`nn.ReLU(inplace=${s2('True')})`;
-    case 'LeakyReLU':return`nn.LeakyReLU(negative_slope=${nu(p.negative_slope)})`;
+    case 'Linear':return`nn.Linear(${p.in_features}, ${p.out_features}, bias=${p.bias!==false})`;
+    case 'Bilinear':return`nn.Bilinear(${p.in1_features}, ${p.in2_features}, ${p.out_features})`;
+    case 'Conv1d':return`nn.Conv1d(${p.in_channels}, ${p.out_channels}, ${p.kernel_size}, stride=${p.stride}, padding=${p.padding})`;
+    case 'Conv2d':return`nn.Conv2d(${p.in_channels}, ${p.out_channels}, ${p.kernel_size}, stride=${p.stride}, padding=${p.padding})`;
+    case 'Conv3d':return`nn.Conv3d(${p.in_channels}, ${p.out_channels}, ${p.kernel_size}, stride=${p.stride}, padding=${p.padding})`;
+    case 'ConvTranspose2d':return`nn.ConvTranspose2d(${p.in_channels}, ${p.out_channels}, ${p.kernel_size}, stride=${p.stride})`;
+    case 'DepthwiseSepConv':return`nn.Sequential(nn.Conv2d(${p.in_channels}, ${p.in_channels}, ${p.kernel_size}, padding=${p.padding}, groups=${p.in_channels}), nn.Conv2d(${p.in_channels}, ${p.out_channels || p.in_channels}, 1))`;
+    case 'ReLU':return`nn.ReLU(inplace=True)`;
+    case 'LeakyReLU':return`nn.LeakyReLU(negative_slope=${p.negative_slope || 0.01})`;
     case 'GELU':return`nn.GELU()`;case 'SiLU':return`nn.SiLU()`;case 'Mish':return`nn.Mish()`;
     case 'Sigmoid':return`nn.Sigmoid()`;case 'Tanh':return`nn.Tanh()`;
-    case 'Softmax':case 'LogSoftmax':return`nn.${l.type}(dim=${nu(p.dim)})`;
-    case 'Dropout':case 'Dropout2d':case 'AlphaDropout':return`nn.${l.type}(p=${nu(parseFloat(p.p).toFixed(2))})`;
-    case 'BatchNorm1d':case 'BatchNorm2d':case 'InstanceNorm2d':return`nn.${l.type}(${nu(p.num_features)})`;
-    case 'LayerNorm':case 'RMSNorm':return`nn.${l.type}(${nu(p.normalized_shape)})`;
-    case 'GroupNorm':return`nn.GroupNorm(${nu(p.num_groups)}, ${nu(p.num_channels)})`;
-    case 'MaxPool1d':case 'MaxPool2d':case 'AvgPool2d':return`nn.${l.type}(kernel_size=${nu(p.kernel_size)}, stride=${nu(p.stride)})`;
-    case 'AdaptiveAvgPool2d':return`nn.AdaptiveAvgPool2d(output_size=${nu(p.output_size)})`;
-    case 'Flatten':return`nn.Flatten(start_dim=${nu(1)})`;
-    case 'Permute':return`# nn.Permute (use in forward: x.permute(${p.dims||'[0,2,1]'}))`;
-    case 'Embedding':return`nn.Embedding(${nu(p.num_embeddings)}, ${nu(p.embedding_dim)})`;
-    case 'MultiheadAttention':return`nn.MultiheadAttention(${nu(p.embed_dim)}, ${nu(p.num_heads)}, dropout=${nu(p.dropout||0)})`;
-    case 'TransformerEncoderLayer':return`nn.TransformerEncoderLayer(d_model=${nu(p.d_model)}, nhead=${nu(p.nhead)}, dim_feedforward=${nu(p.dim_feedforward)}, dropout=${nu(p.dropout||0.1)}, batch_first=${s2('True')})`;
-    case 'TransformerDecoderLayer':return`nn.TransformerDecoderLayer(d_model=${nu(p.d_model)}, nhead=${nu(p.nhead)}, dim_feedforward=${nu(p.dim_feedforward)}, dropout=${nu(p.dropout||0.1)}, batch_first=${s2('True')})`;
-    case 'LSTM':case 'GRU':case 'RNN':return`nn.${l.type}(${nu(p.input_size)}, ${nu(p.hidden_size)}, num_layers=${nu(p.num_layers)}, batch_first=${p.batch_first?s2('True'):s2('False')})`;
-    case 'Conv+BN+Act':return`nn.Sequential(nn.Conv2d(${nu(p.in_channels)}, ${nu(p.out_channels)}, ${nu(p.kernel_size||3)}, padding=${nu(p.padding||1)}), nn.BatchNorm2d(${nu(p.out_channels)}), nn.ReLU(inplace=${s2('True')}))`;
-    case 'Linear+BN+Act':return`nn.Sequential(nn.Linear(${nu(p.in_features)}, ${nu(p.out_features)}), nn.BatchNorm1d(${nu(p.out_features)}), nn.ReLU(inplace=${s2('True')}))`;
-    case 'SEBlock':return`# SEBlock(channels=${p.channels}, reduction=${p.reduction}) — implement separately`;
-    case 'PositionalEncoding':return`# PositionalEncoding(d_model=${p.d_model}, max_len=${p.max_len}) — implement separately`;
-    case 'ResidualBlock':return`# ResidualBlock(channels=${p.channels}) — implement with skip connection`;
+    case 'Softmax':case 'LogSoftmax':return`nn.${l.type}(dim=${p.dim || 1})`;
+    case 'Dropout':case 'Dropout2d':case 'AlphaDropout':return`nn.${l.type}(p=${parseFloat(p.p || 0.5).toFixed(2)})`;
+    case 'BatchNorm1d':case 'BatchNorm2d':case 'InstanceNorm2d':return`nn.${l.type}(${p.num_features})`;
+    case 'LayerNorm':case 'RMSNorm':return`nn.${l.type}(${p.normalized_shape})`;
+    case 'GroupNorm':return`nn.GroupNorm(${p.num_groups}, ${p.num_channels})`;
+    case 'MaxPool1d':case 'MaxPool2d':case 'AvgPool2d':return`nn.${l.type}(kernel_size=${p.kernel_size}, stride=${p.stride})`;
+    case 'AdaptiveAvgPool2d':return`nn.AdaptiveAvgPool2d(output_size=${p.output_size || 1})`;
+    case 'Flatten':return`nn.Flatten(start_dim=1)`;
+    case 'Permute':return`# nn.Permute (use x.permute(${p.dims || '[0,2,1]'}))`;
+    case 'Embedding':return`nn.Embedding(${p.num_embeddings}, ${p.embedding_dim})`;
+    case 'MultiheadAttention':return`nn.MultiheadAttention(${p.embed_dim}, ${p.num_heads}, dropout=${p.dropout || 0})`;
+    case 'TransformerEncoderLayer':return`nn.TransformerEncoderLayer(d_model=${p.d_model}, nhead=${p.nhead}, dim_feedforward=${p.dim_feedforward}, dropout=${p.dropout || 0.1}, batch_first=True)`;
+    case 'TransformerDecoderLayer':return`nn.TransformerDecoderLayer(d_model=${p.d_model}, nhead=${p.nhead}, dim_feedforward=${p.dim_feedforward}, dropout=${p.dropout || 0.1}, batch_first=True)`;
+    case 'LSTM':case 'GRU':case 'RNN':return`nn.${l.type}(${p.input_size}, ${p.hidden_size}, num_layers=${p.num_layers}, batch_first=${p.batch_first !== false})`;
+    case 'Conv+BN+Act':return`nn.Sequential(nn.Conv2d(${p.in_channels}, ${p.out_channels}, ${p.kernel_size || 3}, padding=${p.padding || 1}), nn.BatchNorm2d(${p.out_channels}), nn.ReLU(inplace=True))`;
+    case 'Linear+BN+Act':return`nn.Sequential(nn.Linear(${p.in_features}, ${p.out_features}), nn.BatchNorm1d(${p.out_features}), nn.ReLU(inplace=True))`;
+    case 'SEBlock':return`# SEBlock(channels=${p.channels}, reduction=${p.reduction}) - implement separately`;
+    case 'PositionalEncoding':return`# PositionalEncoding(d_model=${p.d_model}, max_len=${p.max_len}) - implement separately`;
+    case 'ResidualBlock':return`# ResidualBlock(channels=${p.channels}) - implement with skip connection`;
     default:return`nn.Identity()  # ${l.type}`;
   }
 }
@@ -951,13 +965,14 @@ function buildLayerCode(l,nu,s2){
 function renderCode(){
   const el=document.getElementById('rp-code');
   if(!layers.length){el.innerHTML='<div style="color:var(--t3);font-size:8px">Add layers to generate code.</div>';return;}
-  const code=genCode(activeCodeFramework);
+  const codeText=genCode(activeCodeFramework);
+  const codeHtml=highlightCode(codeText);
   el.innerHTML=`
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <button class="btn ${activeCodeFramework === 'pytorch' ? 'ac' : ''}" style="flex:1;justify-content:center" onclick="activeCodeFramework='pytorch';renderCode()">PyTorch</button>
       <button class="btn ${activeCodeFramework === 'tensorflow' ? 'ac' : ''}" style="flex:1;justify-content:center" onclick="activeCodeFramework='tensorflow';renderCode()">TensorFlow</button>
     </div>
-    <pre class="cb2">${code}</pre>
+    <pre class="cb2">${codeHtml}</pre>
     <div style="display:flex;gap:5px;margin-top:6px">
       <button class="btn" style="flex:1;justify-content:center" onclick="copyCode()">⎘ Copy</button>
       <button class="btn gc" style="flex:1;justify-content:center" onclick="exportCode(activeCodeFramework)">⬇ Download ${activeCodeFramework === 'pytorch' ? 'PyTorch' : 'TensorFlow'} .py</button>
@@ -968,7 +983,7 @@ function copyCode(){
 }
 function exportCode(framework = activeCodeFramework){
   const name=document.getElementById('arch-name').value||'model';
-  const code=genCode(framework).replace(/<[^>]+>/g,'');
+  const code=genCode(framework);
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));
   a.download=`${name.replace(/\s+/g,'_')}_${framework}.py`;
