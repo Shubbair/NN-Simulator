@@ -1,21 +1,26 @@
-# AI modeling Simulator (NN Simulator)
+# AI Modeling Simulator (NN Simulator)
 
-Helps student to understand more about network design, work.
-also researchers to check new architecture and test it if logically works or not.
+NN Simulator is a lightweight design and brainstorming tool for students and researchers who want to explore neural network ideas, test architectural logic, and quickly understand whether a model structure is conceptually valid before moving to deeper implementation.
 
-## TODO
+The project focuses on helping users:
 
-- [X] make the UI/UX design
-- [ ] make code clean
-- [ ] provide code for both tensorflow,pytorch (python version)
-- [ ] check the debug(tensorflow button) and change it
-- [ ] check the train function
+- build neural network architectures visually
+- inspect layer connections and shapes
+- validate common design mistakes early
+- review training readiness for valid model structures
+- export architecture ideas into PyTorch and TensorFlow code
 
 ## Testing
 
-` npm test -- --test-reporter=spec `
+Run the validation and debugging checks with:
+
+`npm test -- --test-reporter=spec`
+
+Current test coverage focuses on:
 
 - validation of bad layer arrangements
 - validation of invalid skip direction
 - validation of a valid Conv → Flatten → Linear flow
-- training readiness for a valid architecture
+- checking training readiness for a valid architecture
+
+This project is intended as a research and learning tool, not as a full production ML training platform.
