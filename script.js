@@ -1187,7 +1187,7 @@ async function runTrain(){
 function closeOv(id){document.getElementById(id).classList.remove('open');}
 function resetNet(){
   layers=[];skips=[];selIdx=null;nextId=1;
-  document.getElementById('arch-name').value='My Architecture';
+  document.getElementById('arch-name').value='New Model';
   render();
 }
 
