@@ -9,6 +9,7 @@ The project focuses on helping users:
 - validate common design mistakes early
 - review training readiness for valid model structures
 - export architecture ideas into PyTorch and TensorFlow code
+- download graph of neural network architecture
 
 ## Analysis Summary
 
