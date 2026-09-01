@@ -239,6 +239,24 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:12.
 .btrack{height:5px;background:var(--border);border-radius:var(--r-pill);overflow:hidden}
 .bfill{height:100%;border-radius:var(--r-pill);transition:width .6s var(--ease)}
 
+.analysis-shell{display:grid;gap:var(--sp-5)}
+.analysis-block{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--sp-5);box-shadow:var(--shadow-xs)}
+.analysis-title{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:.08em;font-weight:800;margin-bottom:var(--sp-4)}
+.analysis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.analysis-metric{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-4);min-height:88px;display:flex;flex-direction:column;justify-content:center}
+.analysis-metric .label{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;font-weight:700;display:block;margin-bottom:4px}
+.analysis-metric .value{font-size:clamp(20px,2vw,30px);font-weight:800;letter-spacing:-.04em;color:var(--ink);line-height:1.1}
+.analysis-subtitle{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin:var(--sp-4) 0 var(--sp-2)}
+.analysis-risk{display:flex;align-items:center;justify-content:space-between;padding:0 0 var(--sp-2);margin-bottom:var(--sp-2)}
+.analysis-risk .level{font-size:clamp(26px,2vw,40px);font-weight:800;letter-spacing:-.05em}
+.analysis-list{display:grid;gap:var(--sp-2)}
+.analysis-list .item{display:flex;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);font-size:10px;line-height:1.6;color:var(--ink)}
+.analysis-list .item.warn{background:rgba(165,115,10,.05);border-color:rgba(165,115,10,.2)}
+.analysis-list .item.ok{background:rgba(14,159,110,.05);border-color:rgba(14,159,110,.2)}
+.analysis-list .item.error{background:rgba(191,76,60,.06);border-color:rgba(191,76,60,.2)}
+.analysis-list .icon{font-size:13px;line-height:1.2;display:inline-block;min-width:12px}
+.analysis-list .text{flex:1}
+
 /* Diagram */
 #diag-svg{width:100%;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);display:block;box-shadow:var(--shadow-xs)}
 .diag-controls{display:flex;gap:var(--sp-2);margin-bottom:var(--sp-4);align-items:center}

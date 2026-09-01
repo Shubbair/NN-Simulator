@@ -154,6 +154,7 @@ const BASELINES=[
 let layers=[],skips=[],selIdx=null,nextId=1;
 let skipMode=false,skipPend=null;
 let saved=[],customLs=[];
+let activeCodeFramework='pytorch';
 
 // ══════════════════════════════════════════════════
 // BUILD PALETTE
@@ -614,45 +615,115 @@ function estimateFlops(){
 function renderAnalysis(){
   const el=document.getElementById('rp-analysis');
   if(!layers.length){el.innerHTML='<div style="color:var(--t3);font-size:8px">Add layers to see analysis.</div>';return;}
-  const total=countParams();const flops=estimateFlops();const mem=total*4/1024/1024;
-  const issues=validate();const hasE=issues.some(i=>i.sev==='error');
+
+  const total=countParams();
+  const flops=estimateFlops();
+  const mem=total*4/1024/1024;
+  const issues=validate();
+  const hasE=issues.some(i=>i.sev==='error');
   const depth=layers.length;
   const hasSkips=skips.length>0;
   const hasNorm=layers.some(l=>['BatchNorm1d','BatchNorm2d','LayerNorm','GroupNorm','RMSNorm','InstanceNorm2d'].includes(l.type));
   const hasDropout=layers.some(l=>['Dropout','Dropout2d','AlphaDropout'].includes(l.type));
-  // Per-layer breakdown
   const lp=layers.map((l,i)=>({n:l.type,i,p:countLayerParams(l)})).filter(x=>x.p>0).sort((a,b)=>b.p-a.p).slice(0,6);
   const maxLP=Math.max(...lp.map(x=>x.p),1);
-  // Grad risk
   const gradRisk=depth>=12&&!hasSkips?'High':depth>=7&&!hasNorm?'Medium':'Low';
   const gradColor=gradRisk==='High'?'var(--re)':gradRisk==='Medium'?'var(--ye)':'var(--gr)';
-  // Regularization score
   const regScore=hasDropout&&hasNorm?'Good':hasDropout||hasNorm?'Moderate':'Weak';
   const regColor=regScore==='Good'?'var(--gr)':regScore==='Moderate'?'var(--ye)':'var(--re)';
+
+  const formatCount=(value)=>{
+    if(value>=1e6)return (value/1e6).toFixed(2)+'M';
+    if(value>=1e3)return (value/1e3).toFixed(1)+'K';
+    return String(value);
+  };
+
+  const layerRows=lp.map((item)=>`
+    <div class="bar">
+      <div class="bk"><span>L${item.i+1} ${item.n}</span><span class="bv">${formatCount(item.p)}</span></div>
+      <div class="btrack"><div class="bfill" style="width:${(item.p/maxLP*100).toFixed(0)}%;background:var(--ink);"></div></div>
+    </div>
+  `).join('');
+
+  const flowItems=[
+    {
+      type: hasSkips ? 'ok' : 'warn',
+      icon: hasSkips ? '✓' : '⚠',
+      text: hasSkips ? `${skips.length} residual connection${skips.length > 1 ? 's' : ''} keep the gradient path stable.` : 'No skip connections — gradients must pass through every layer.'
+    },
+    {
+      type: hasNorm ? 'ok' : 'warn',
+      icon: hasNorm ? '✓' : '⚠',
+      text: hasNorm ? 'Normalization layers stabilize activations and improve convergence.' : 'No normalization — consider BatchNorm or LayerNorm.'
+    },
+    {
+      type: depth >= 14 ? 'error' : depth >= 8 ? 'warn' : 'ok',
+      icon: depth >= 14 ? '⚠' : depth >= 8 ? '⚠' : '✓',
+      text: `Network depth: ${depth} layers${depth >= 14 ? ' — watch for vanishing gradients.' : depth >= 8 ? ' — monitor stability carefully.' : ' — efficient and easy to optimize.'}`
+    }
+  ];
+
+  const regItems=[
+    {
+      type: hasDropout ? 'ok' : 'warn',
+      icon: hasDropout ? '✓' : '⚠',
+      text: hasDropout ? 'Dropout is active, which reduces overfitting risk.' : 'No dropout — may overfit on small datasets.'
+    },
+    {
+      type: !hasE ? 'ok' : 'error',
+      icon: !hasE ? '✓' : '✗',
+      text: !hasE ? 'No structural errors — the model can be compiled cleanly.' : 'Structural issues are present and should be fixed before training.'
+    }
+  ];
+
   el.innerHTML=`
-    <div class="as"><div class="ah">Parameter Overview</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px">
-        <div class="rc"><div class="rk">Total Params</div><div class="rv">${total>1e6?(total/1e6).toFixed(2)+'M':total>1e3?(total/1e3).toFixed(1)+'K':total}</div></div>
-        <div class="rc"><div class="rk">Memory (FP32)</div><div class="rv">${mem.toFixed(2)} MB</div></div>
-        <div class="rc"><div class="rk">Est. FLOPs</div><div class="rv">${flops>1e9?(flops/1e9).toFixed(1)+'G':flops>1e6?(flops/1e6).toFixed(1)+'M':(flops/1e3).toFixed(0)+'K'}</div></div>
-        <div class="rc"><div class="rk">Learnable Layers</div><div class="rv">${lp.length}</div></div>
-      </div>
-      <div class="slabel">Param Distribution by Layer</div>
-      ${lp.map(x=>`<div class="bar">
-        <div class="bk"><span>L${x.i+1} ${x.n}</span><span class="bv">${x.p>1e6?(x.p/1e6).toFixed(2)+'M':x.p>1e3?(x.p/1e3).toFixed(1)+'K':x.p}</span></div>
-        <div class="btrack"><div class="bfill" style="width:${(x.p/maxLP*100).toFixed(0)}%;background:var(--acc)"></div></div>
-      </div>`).join('')}
-    </div>
-    <div class="as"><div class="ah">Gradient Flow Analysis</div>
-      <div class="rc" style="margin-bottom:6px"><div class="rk">Vanishing Gradient Risk</div><div class="rv" style="color:${gradColor}">${gradRisk}</div></div>
-      <div class="vi ${hasSkips?'ok':'wn'}"><span>${hasSkips?'✓':'⚠'}</span><span>${hasSkips?`${skips.length} residual connection${skips.length>1?'s':''} — gradient highway active.`:'No skip connections — gradients must pass through all layers.'}</span></div>
-      <div class="vi ${hasNorm?'ok':'wn'}"><span>${hasNorm?'✓':'⚠'}</span><span>${hasNorm?'Normalization layers stabilize activations and gradients.':'No normalization — consider BatchNorm or LayerNorm.'}</span></div>
-      <div class="vi ${depth<8?'ok':depth<14?'wn':'er'}"><span>${depth<8?'✓':depth<14?'⚠':'⚠'}</span><span>Network depth: ${depth} layers${depth>=14?' — use residual connections for stability':depth>=8?' — monitor for gradient issues':''}.</span></div>
-    </div>
-    <div class="as"><div class="ah">Regularization Health</div>
-      <div class="rc" style="margin-bottom:6px"><div class="rk">Regularization Score</div><div class="rv" style="color:${regColor}">${regScore}</div></div>
-      <div class="vi ${hasDropout?'ok':'wn'}"><span>${hasDropout?'✓':'⚠'}</span><span>${hasDropout?'Dropout present — reduces overfitting.':'No dropout — may overfit on small datasets.'}</span></div>
-      <div class="vi ${!hasE?'ok':'er'}"><span>${!hasE?'✓':'✗'}</span><span>${!hasE?'No structural errors — architecture can be compiled.':'Structural errors prevent training.'}</span></div>
+    <div class="analysis-shell">
+      <section class="analysis-block">
+        <div class="analysis-title">Parameter Overview</div>
+        <div class="analysis-grid">
+          <div class="analysis-metric">
+            <span class="label">Total Params</span>
+            <span class="value">${formatCount(total)}</span>
+          </div>
+          <div class="analysis-metric">
+            <span class="label">Memory (FP32)</span>
+            <span class="value">${mem.toFixed(2)} MB</span>
+          </div>
+          <div class="analysis-metric">
+            <span class="label">Est. FLOPs</span>
+            <span class="value">${flops>1e9?(flops/1e9).toFixed(1)+'G':flops>1e6?(flops/1e6).toFixed(1)+'M':(flops/1e3).toFixed(0)+'K'}</span>
+          </div>
+          <div class="analysis-metric">
+            <span class="label">Learnable Layers</span>
+            <span class="value">${lp.length}</span>
+          </div>
+        </div>
+
+        <div class="analysis-subtitle">Param Distribution by Layer</div>
+        ${layerRows}
+      </section>
+
+      <section class="analysis-block">
+        <div class="analysis-title">Gradient Flow Analysis</div>
+        <div class="analysis-risk">
+          <span style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700">Vanishing Gradient Risk</span>
+          <span class="level" style="color:${gradColor}">${gradRisk}</span>
+        </div>
+        <div class="analysis-list">
+          ${flowItems.map((item)=>`<div class="item ${item.type}"><span class="icon">${item.icon}</span><span class="text">${item.text}</span></div>`).join('')}
+        </div>
+      </section>
+
+      <section class="analysis-block">
+        <div class="analysis-title">Regularization Health</div>
+        <div class="analysis-risk">
+          <span style="color:var(--t2);font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700">Regularization Score</span>
+          <span class="level" style="color:${regColor}">${regScore}</span>
+        </div>
+        <div class="analysis-list">
+          ${regItems.map((item)=>`<div class="item ${item.type}"><span class="icon">${item.icon}</span><span class="text">${item.text}</span></div>`).join('')}
+        </div>
+      </section>
     </div>`;
 }
 
@@ -753,15 +824,34 @@ function exportPNG(){
 // ══════════════════════════════════════════════════
 // CODE GENERATION
 // ══════════════════════════════════════════════════
-function genCode(){
+function genCode(framework = activeCodeFramework){
+  const name=(document.getElementById('arch-name').value||'MyModel').replace(/[^a-zA-Z0-9]/g,'_');
+  const total=countParams();
+  if(framework === 'tensorflow'){
+    return `# TensorFlow model generated by NN Simulator
+import tensorflow as tf
+
+class ${name}(tf.keras.Model):
+    def __init__(self):
+        super().__init__()
+        self.model = tf.keras.Sequential([
+${layers.map((l, i) => `            ${buildTensorFlowLayerCode(l, i)}`).join(',\n')}
+        ])
+
+    def call(self, x):
+        return self.model(x)
+
+model = ${name}()
+print(f"${name}: {model.count_params():,} trainable parameters")
+`;
+  }
+
   const kw=s=>`<span class="kw">${s}</span>`;
   const fn=s=>`<span class="fn">${s}</span>`;
   const nu=s=>`<span class="nu">${s}</span>`;
   const cm=s=>`<span class="cm">${s}</span>`;
   const s2=s=>`<span class="st2">${s}</span>`;
-  const name=(document.getElementById('arch-name').value||'MyModel').replace(/[^a-zA-Z0-9]/g,'_');
   const hasSkips=skips.length>0;
-  const total=countParams();
   const lines=[];
   lines.push(cm('# ══════════════════════════════════════'));
   lines.push(cm(`# ${name}`));
@@ -800,6 +890,24 @@ function genCode(){
   lines.push(`n_params = ${fn('sum')}(p.${fn('numel')}() ${kw('for')} p ${kw('in')} model.${fn('parameters')}() ${kw('if')} p.requires_grad)`);
   lines.push(`${fn('print')}(${s2(`f"${name}: {n_params:,} trainable parameters"`)})`);
   return lines.join('\n');
+}
+
+function buildTensorFlowLayerCode(l, idx){
+  const p=l.params;
+  switch (l.type) {
+    case 'Linear': return `tf.keras.layers.Dense(${p.out_features || 64}, input_shape=${JSON.stringify([p.in_features || 128])})`;
+    case 'Conv2d': return `tf.keras.layers.Conv2D(${p.out_channels || 32}, (${p.kernel_size || 3}, ${p.kernel_size || 3}), strides=(${p.stride || 1}, ${p.stride || 1}), padding='same')`;
+    case 'BatchNorm2d': return `tf.keras.layers.BatchNormalization()`;
+    case 'LayerNorm': return `tf.keras.layers.LayerNormalization()`;
+    case 'ReLU': return `tf.keras.layers.ReLU()`;
+    case 'LeakyReLU': return `tf.keras.layers.LeakyReLU(alpha=${p.negative_slope || 0.01})`;
+    case 'Dropout': return `tf.keras.layers.Dropout(${p.p || 0.5})`;
+    case 'MaxPool2d': return `tf.keras.layers.MaxPooling2D(pool_size=(${p.kernel_size || 2}, ${p.kernel_size || 2}), strides=(${p.stride || 2}, ${p.stride || 2}))`;
+    case 'AvgPool2d': return `tf.keras.layers.AveragePooling2D(pool_size=(${p.kernel_size || 2}, ${p.kernel_size || 2}), strides=(${p.stride || 2}, ${p.stride || 2}))`;
+    case 'Flatten': return `tf.keras.layers.Flatten()`;
+    case 'Softmax': return `tf.keras.layers.Softmax(axis=-1)`;
+    default: return `tf.keras.layers.Activation('${(l.type || 'relu').toLowerCase()}')`;
+  }
 }
 
 function buildLayerCode(l,nu,s2){
@@ -843,22 +951,28 @@ function buildLayerCode(l,nu,s2){
 function renderCode(){
   const el=document.getElementById('rp-code');
   if(!layers.length){el.innerHTML='<div style="color:var(--t3);font-size:8px">Add layers to generate code.</div>';return;}
-  const code=genCode();
-  el.innerHTML=`<pre class="cb2">${code}</pre>
+  const code=genCode(activeCodeFramework);
+  el.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn ${activeCodeFramework === 'pytorch' ? 'ac' : ''}" style="flex:1;justify-content:center" onclick="activeCodeFramework='pytorch';renderCode()">PyTorch</button>
+      <button class="btn ${activeCodeFramework === 'tensorflow' ? 'ac' : ''}" style="flex:1;justify-content:center" onclick="activeCodeFramework='tensorflow';renderCode()">TensorFlow</button>
+    </div>
+    <pre class="cb2">${code}</pre>
     <div style="display:flex;gap:5px;margin-top:6px">
       <button class="btn" style="flex:1;justify-content:center" onclick="copyCode()">⎘ Copy</button>
-      <button class="btn gc" style="flex:1;justify-content:center" onclick="exportCode()">⬇ Export .py</button>
+      <button class="btn gc" style="flex:1;justify-content:center" onclick="exportCode(activeCodeFramework)">⬇ Download ${activeCodeFramework === 'pytorch' ? 'PyTorch' : 'TensorFlow'} .py</button>
     </div>`;
 }
 function copyCode(){
   navigator.clipboard.writeText(document.querySelector('.cb2')?.textContent||'');
 }
-function exportCode(){
+function exportCode(framework = activeCodeFramework){
   const name=document.getElementById('arch-name').value||'model';
-  const code=genCode().replace(/<[^>]+>/g,'');
+  const code=genCode(framework).replace(/<[^>]+>/g,'');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));
-  a.download=name.replace(/\s+/g,'_')+'.py';a.click();
+  a.download=`${name.replace(/\s+/g,'_')}_${framework}.py`;
+  a.click();
   closeOv('ov-train');
 }
 

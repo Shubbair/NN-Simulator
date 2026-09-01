@@ -83,7 +83,6 @@
   <div class="rtabs">
     <div class="rtab on"  onclick="setRTab('inspector',this)">Inspector</div>
     <div class="rtab" onclick="setRTab('validate',this)">Validate</div>
-    <div class="rtab" onclick="setRTab('trace',this)">Tensor Flow</div>
     <div class="rtab" onclick="setRTab('analysis',this)">Analysis</div>
     <div class="rtab" onclick="setRTab('diagram',this)">Diagram</div>
     <div class="rtab" onclick="setRTab('code',this)">Code</div>
@@ -96,21 +95,6 @@
 
   <!-- Validate -->
   <div class="rp" id="rp-validate"></div>
-
-  <!-- Tensor Flow -->
-  <div class="rp" id="rp-trace">
-    <div class="as">
-      <div class="ah">Input Tensor Shape</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-        <div class="f"><label>Batch (N)</label><input type="number" id="tn" value="1" min="1"></div>
-        <div class="f"><label>Channels</label><input type="number" id="tc" value="3" min="1"></div>
-        <div class="f"><label>Height</label><input type="number" id="th" value="32" min="1"></div>
-        <div class="f"><label>Width</label><input type="number" id="tw" value="32" min="1"></div>
-      </div>
-      <button class="btn ac" onclick="runTrace()" style="width:100%;justify-content:center;margin-top:4px">⚡ Run Tensor Flow</button>
-    </div>
-    <div id="trace-out"></div>
-  </div>
 
   <!-- Analysis -->
   <div class="rp" id="rp-analysis"></div>
