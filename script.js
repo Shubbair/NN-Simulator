@@ -834,14 +834,16 @@ function escapeHtml(value){
 }
 
 function highlightCode(code){
-  let html = escapeHtml(code);
-  html = html.replace(/(#[^\n]*)/g, '<span class="cm">$1</span>');
-  html = html.replace(/("[^"]*"|'[^']*'|`[^`]*`)/g, '<span class="st2">$1</span>');
-  html = html.replace(/\b(import|from|class|def|return|if|elif|else|for|while|with|as|in|and|or|not|True|False|None|pass|break|continue|super|print|try|except|lambda|yield|del)\b/g, '<span class="kw">$1</span>');
-  html = html.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="nu">$1</span>');
-  html = html.replace(/\b([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()/g, '<span class="fn">$1</span>');
-  html = html.replace(/\b([A-Za-z_][A-Za-z0-9_]*)(?=\s*\.)/g, '<span class="fn">$1</span>');
-  return html;
+  const text = escapeHtml(code);
+  return text.replace(/(#[^\n]*)|(\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*'|`(?:\\.|[^`])*`)|\b(import|from|class|def|return|if|elif|else|for|while|with|as|in|and|or|not|True|False|None|pass|break|continue|super|print|try|except|lambda|yield|del)\b|(\b\d+(?:\.\d+)?\b)|\b([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()|\b([A-Za-z_][A-Za-z0-9_]*)(?=\s*\.)/g, (match, comment, stringToken, keyword, numberToken, fnCall, fnDot) => {
+    if (comment) return `<span class="cm">${comment}</span>`;
+    if (stringToken) return `<span class="st2">${stringToken}</span>`;
+    if (keyword) return `<span class="kw">${keyword}</span>`;
+    if (numberToken) return `<span class="nu">${numberToken}</span>`;
+    if (fnCall) return `<span class="fn">${fnCall}</span>`;
+    if (fnDot) return `<span class="fn">${fnDot}</span>`;
+    return match;
+  });
 }
 
 function genCode(framework = activeCodeFramework){
